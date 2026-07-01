@@ -1,98 +1,114 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Play, Pause, Trash2 } from "lucide-react";
+import { X, Play, Pause, Trash2, X as CloseIcon } from "lucide-react";
 import { updateWatchSession, endWatchSession } from "../services/chatService";
 
 export default function WatchParty({ chatId, currentUser, watchSession }) {
   const playerRef = useRef(null);
   const containerRef = useRef(null);
-  const ignoreRef = useRef(false);
   const [ready, setReady] = useState(false);
+  const [playerState, setPlayerState] = useState(null);
 
-  const isHost = watchSession?.hostId === currentUser.uid;
+  const isHost = watchSession?.hostId === currentUser?.uid;
 
+  // initialize or cleanup player
   useEffect(() => {
-    if (!window.YT) {
-      const tag = document.createElement("script");
-      tag.src = "https://www.youtube.com/iframe_api";
-      document.body.appendChild(tag);
-    }
-
-    window.onYouTubeIframeAPIReady = initPlayer;
-  }, []);
-
-  const initPlayer = () => {
     if (!watchSession?.videoId) return;
 
-    playerRef.current = new window.YT.Player(containerRef.current, {
-      videoId: watchSession.videoId,
-      width: "100%",
-      height: "100%",
-      playerVars: {
-        controls: 0,
-      },
-      events: {
-        onReady: () => setReady(true),
-        onStateChange: handleStateChange,
-      },
-    });
-  };
+    let prevOnReady = window.onYouTubeIframeAPIReady;
 
-  useEffect(() => {
-    if (!watchSession?.videoId || !window.YT?.Player) return;
+    const handleStateChange = (event) => {
+      setPlayerState(event.data);
+    };
 
-    playerRef.current?.destroy?.();
-    initPlayer();
+    const initPlayer = () => {
+      if (!containerRef.current) return;
+      if (playerRef.current) return; // already initialized
+      if (!window.YT || !window.YT.Player) return;
+
+      playerRef.current = new window.YT.Player(containerRef.current, {
+        videoId: watchSession.videoId,
+        width: "100%",
+        height: "100%",
+        playerVars: {
+          controls: 0,
+        },
+        events: {
+          onReady: () => {
+            setReady(true);
+          },
+          onStateChange: handleStateChange,
+        },
+      });
+    };
+
+    // If YT API not loaded, inject it once and set a safe handler
+    if (!window.YT) {
+      if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+        const tag = document.createElement("script");
+        tag.src = "https://www.youtube.com/iframe_api";
+        document.body.appendChild(tag);
+      }
+
+      window.onYouTubeIframeAPIReady = () => {
+        initPlayer();
+        if (typeof prevOnReady === "function") prevOnReady();
+      };
+    } else {
+      initPlayer();
+    }
+
+    return () => {
+      // destroy player on unmount or when video changes
+      if (playerRef.current && typeof playerRef.current.destroy === "function") {
+        try {
+          playerRef.current.destroy();
+        } catch (e) {
+          // ignore
+        }
+        playerRef.current = null;
+      }
+      // restore previous global handler
+      window.onYouTubeIframeAPIReady = prevOnReady;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchSession?.videoId]);
 
+  // sync play/pause from session -> player
   useEffect(() => {
-    if (!ready || !playerRef.current || !watchSession) return;
-    if (watchSession.updatedBy === currentUser.uid) return;
+    if (!playerRef.current) return;
+    if (!watchSession) return;
 
-    const player = playerRef.current;
-
-    const drift = Math.abs(
-      player.getCurrentTime() - watchSession.currentTime
-    );
-
-    if (drift > 1.2) {
-      player.seekTo(watchSession.currentTime, true);
+    try {
+      if (watchSession.isPlaying) {
+        if (playerRef.current.playVideo) playerRef.current.playVideo();
+      } else {
+        if (playerRef.current.pauseVideo) playerRef.current.pauseVideo();
+      }
+      if (typeof watchSession.currentTime === "number" && playerRef.current.seekTo) {
+        // only seek if difference is significant
+        const current = playerRef.current.getCurrentTime ? playerRef.current.getCurrentTime() : 0;
+        if (Math.abs(current - watchSession.currentTime) > 1.5) {
+          playerRef.current.seekTo(watchSession.currentTime, true);
+        }
+      }
+    } catch (e) {
+      // ignore API errors
     }
+  }, [watchSession]);
 
-    ignoreRef.current = true;
-
-    watchSession.isPlaying ? player.playVideo() : player.pauseVideo();
-  }, [watchSession, ready]);
-
-  const handleStateChange = (event) => {
-    if (!isHost) return;
-
-    if (ignoreRef.current) {
-      ignoreRef.current = false;
-      return;
-    }
-
-    const player = playerRef.current;
-    if (!player) return;
-
-    const time = player.getCurrentTime();
-
-    updateWatchSession(chatId, {
-      videoId: watchSession.videoId,
-      isPlaying: event.data === window.YT.PlayerState.PLAYING,
-      currentTime: time,
-      hostId: watchSession.hostId,
-    }, currentUser.uid);
+  const togglePlay = async () => {
+    if (!playerRef.current) return;
+    const isPlaying = watchSession?.isPlaying;
+    // optimistic UI: update session
+    await updateWatchSession(chatId, { isPlaying: !isPlaying });
+    try {
+      if (!isPlaying) playerRef.current.playVideo();
+      else playerRef.current.pauseVideo();
+    } catch (e) {}
   };
 
-  const togglePlay = () => {
-    const player = playerRef.current;
-    if (!player) return;
-
-    if (watchSession.isPlaying) {
-      player.pauseVideo();
-    } else {
-      player.playVideo();
-    }
+  const endSession = async () => {
+    await endWatchSession(chatId);
   };
 
   if (!watchSession?.videoId) return null;
@@ -101,23 +117,22 @@ export default function WatchParty({ chatId, currentUser, watchSession }) {
     <div className="watch-party">
       <div className="watch-party-header">
         <span>Watch Party {isHost ? "(Host)" : ""}</span>
-
-        <div className="watch-actions">
-          <button onClick={togglePlay}>
-            {watchSession.isPlaying ? <Pause size={18} /> : <Play size={18} />}
+        <div className="watch-party-actions">
+          <button onClick={togglePlay} aria-label="Toggle play">
+            {watchSession?.isPlaying ? <Pause size={16} /> : <Play size={16} />}
           </button>
-
-          <button onClick={() => endWatchSession(chatId)}>
-            <Trash2 size={18} />
-          </button>
-
-          <button onClick={() => endWatchSession(chatId)}>
-            <X size={18} />
-          </button>
+          {isHost && (
+            <button onClick={endSession} aria-label="End session">
+              <Trash2 size={16} />
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="watch-party-player" style={{ width: "100%", height: "400px" }} ref={containerRef} />
+      <div className="watch-party-player-wrapper">
+        {/* player container: YT will render iframe inside this node */}
+        <div className="watch-party-player" ref={containerRef} />
+      </div>
     </div>
   );
 }
