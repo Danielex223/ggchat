@@ -17,8 +17,7 @@ export default function MessageBubble({
     ? extractYouTubeId(message.text)
     : null;
 
-  const isActiveWatchParty =
-    youtubeId && youtubeId === activeWatchVideoId;
+  const isActiveWatchParty = youtubeId && youtubeId === activeWatchVideoId;
 
   const handleDelete = () => {
     onDelete?.(message.id);
@@ -61,18 +60,16 @@ export default function MessageBubble({
             <p className="deleted-text">This message was deleted</p>
           ) : youtubeId ? (
             isActiveWatchParty ? (
-              <div className="watch-party-chip">
-                ▶ Playing in Watch Together
-              </div>
+              <div className="watch-party-chip">▶ Playing in Watch Together</div>
             ) : (
-              <iframe
-                width="280"
-                height="158"
-                src={`https://www.youtube.com/embed/${youtubeId}`}
-                title="YouTube video"
-                frameBorder="0"
-                allowFullScreen
-              />
+              <div className="youtube-embed">
+                <iframe
+                  src={`https://www.youtube.com/embed/${youtubeId}`}
+                  title="YouTube video"
+                  frameBorder="0"
+                  allowFullScreen
+                />
+              </div>
             )
           ) : (
             <p>{message.text}</p>
