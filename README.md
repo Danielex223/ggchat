@@ -1,16 +1,56 @@
-# React + Vite
+# GGCHAT
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+A full-stack, real-time messaging platform inspired by WhatsApp and Discord — built solo from scratch.
 
-Currently, two official plugins are available:
+**Live demo:** https://ggchat-git-main-danielex223s-projects.vercel.app/
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Features
 
-## React Compiler
+- Real-time 1-on-1 and group messaging with live sync
+- Firebase Authentication (email/password)
+- Online/offline presence, typing indicators, read receipts
+- Media sharing (images/video) via Cloudinary, with captions and a lightbox viewer
+- YouTube link previews + fully synced **Watch Together** (host controls, live scrub bar, viewer count)
+- Reply-to-message threading
+- Message edit, delete, and pin
+- Group chats with admin roles (max 2 admins), freeze mode, cosmetic member role tags
+- Friends system with requests (send/accept/decline)
+- Archive and delete chats/groups per-user, with a dedicated Archived view
+- Editable profile (photo, bio, display name), email privacy toggle
+- Fully responsive — desktop and mobile layouts
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Tech Stack
 
-## Expanding the Oxlint configuration
+- **Frontend:** React (Vite), CSS
+- **Backend:** Firebase Authentication, Cloud Firestore (real-time listeners)
+- **Media:** Cloudinary
+- **Deployment:** Vercel
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+## Running locally
+
+```bash
+git clone https://github.com/Danielex223/ggchat.git
+cd ggchat
+npm install
+```
+
+Create a `.env` file in the root with your own Firebase and Cloudinary keys:
+
+```
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=
+VITE_FIREBASE_PROJECT_ID=
+VITE_FIREBASE_STORAGE_BUCKET=
+VITE_FIREBASE_MESSAGING_SENDER_ID=
+VITE_FIREBASE_APP_ID=
+VITE_CLOUDINARY_CLOUD_NAME=
+VITE_CLOUDINARY_UPLOAD_PRESET=
+```
+
+```bash
+npm run dev
+```
+
+## Author
+
+Built by [Daniel (Inyene Udo-Akang)](https://github.com/Danielex223)
