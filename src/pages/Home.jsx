@@ -23,10 +23,11 @@ export default function Home() {
         <Sidebar
           user={user}
           activeTab={activeTab}
+          setActiveTab={setActiveTab}
           onSelectChat={setSelectedChatId}
           selectedChatId={selectedChatId}
         />
-        <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
+        <Navbar activeTab={activeTab} setActiveTab={setActiveTab} user={user} />
       </div>
       <div className="chat-panel">
         <ChatWindow

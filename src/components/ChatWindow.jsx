@@ -1,41 +1,50 @@
 import { useState, useEffect, useRef } from "react";
-import { ArrowLeft, Tv } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../lib/firebase";
-
 import {
   subscribeToMessages,
   sendMessage,
   subscribeToChat,
-  startWatchSession,
+  markChatRead,
 } from "../services/chatService";
-
-import { extractYouTubeId, isYouTubeUrl } from "../services/youtubeService";
-
 import MessageBubble from "./MessageBubble";
 import MessageInput from "./MessageInput";
 import WatchParty from "./WatchParty";
+import Avatar from "./Avatar";
+import PinnedBanner from "./PinnedBanner";
+import InfoPanel from "./InfoPanel";
 
 export default function ChatWindow({ chatId, currentUser, onBack }) {
   const [messages, setMessages] = useState([]);
   const [otherUser, setOtherUser] = useState(null);
   const [chatData, setChatData] = useState(null);
+  const [showInfo, setShowInfo] = useState(false);
+  const [replyingTo, setReplyingTo] = useState(null);
 
   const bottomRef = useRef(null);
+  const messageRefs = useRef({});
 
-  // messages
   useEffect(() => {
     if (!chatId) return;
     return subscribeToMessages(chatId, setMessages);
   }, [chatId]);
 
-  // chat doc (includes watch session)
+  useEffect(() => {
+    setReplyingTo(null);
+  }, [chatId]);
+
   useEffect(() => {
     if (!chatId) return;
     return subscribeToChat(chatId, setChatData);
   }, [chatId]);
 
-  // other user
+  // Mark this chat as read whenever it's open and new messages come in
+  useEffect(() => {
+    if (!chatId || !currentUser || messages.length === 0) return;
+    markChatRead(chatId, currentUser.uid);
+  }, [chatId, currentUser, messages]);
+
   useEffect(() => {
     if (!chatData || chatData.isGroup) return;
 
@@ -50,22 +59,27 @@ export default function ChatWindow({ chatId, currentUser, onBack }) {
     });
   }, [chatData, currentUser]);
 
-  // auto scroll
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // send message + auto start watch
-  const handleSend = (text) => {
-    sendMessage(chatId, currentUser.uid, text);
+  const handleSend = (text, replyTo) => {
+    sendMessage(chatId, currentUser.uid, text, chatData?.participants || [], "text", replyTo || null);
+    setReplyingTo(null);
+  };
 
-    if (!chatData?.watchSession && isYouTubeUrl(text)) {
-      const videoId = extractYouTubeId(text);
-
-      if (videoId) {
-        startWatchSession(chatId, videoId, currentUser.uid);
-      }
+  const handleJumpToMessage = (messageId) => {
+    const el = messageRefs.current[messageId];
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("message-highlight");
+      setTimeout(() => el.classList.remove("message-highlight"), 1500);
     }
+  };
+
+  const handleGroupDeleted = () => {
+    setShowInfo(false);
+    onBack();
   };
 
   if (!chatId) {
@@ -76,6 +90,24 @@ export default function ChatWindow({ chatId, currentUser, onBack }) {
     );
   }
 
+  // Hide messages sent before this user's own "clear" point. The message
+  // docs themselves are untouched, so other participants still see them.
+  const clearedAt = chatData?.clearedFor?.[currentUser.uid];
+  const visibleMessages = clearedAt
+    ? messages.filter((m) => !m.createdAt || m.createdAt.toMillis() > clearedAt.toMillis())
+    : messages;
+
+  const pinnedMessage = chatData?.pinnedMessageId
+    ? visibleMessages.find((m) => m.id === chatData.pinnedMessageId)
+    : null;
+
+  const isGroup = !!chatData?.isGroup;
+  const roles = chatData?.roles || {};
+  const stillMember = chatData?.participants?.includes(currentUser.uid);
+  const isAdmin = isGroup && stillMember && (chatData?.adminIds || []).includes(currentUser.uid);
+  const isFrozenForMe = isGroup && chatData?.frozen && !isAdmin;
+  const noLongerInGroup = isGroup && chatData && !stillMember;
+
   return (
     <div className="chat-window">
       <div className="chat-header">
@@ -83,46 +115,95 @@ export default function ChatWindow({ chatId, currentUser, onBack }) {
           <ArrowLeft size={22} />
         </button>
 
-        <div className="avatar-placeholder small">
-          {otherUser?.online && <span className="online-dot" />}
-        </div>
+        <div className="chat-header-clickable" onClick={() => setShowInfo(true)}>
+          {isGroup ? (
+            chatData.groupPhotoURL ? (
+              <img src={chatData.groupPhotoURL} alt="" className="avatar-img-header" />
+            ) : (
+              <div className="avatar-placeholder" />
+            )
+          ) : (
+            <Avatar user={otherUser} size="small" showOnlineDot />
+          )}
 
-        <div>
-          <p className="chat-header-name">
-            {otherUser?.displayName || "Chat"}
-          </p>
-          <p className="chat-header-status">
-            {otherUser?.online ? "Online" : "Offline"}
-          </p>
+          <div>
+            <p className="chat-header-name">
+              {isGroup ? chatData.groupName : otherUser?.displayName || "Chat"}
+            </p>
+            <p className="chat-header-status">
+              {isGroup
+                ? `${chatData.participants.length} members`
+                : otherUser?.online
+                ? "Online"
+                : "Offline"}
+            </p>
+          </div>
         </div>
-
-        <Tv size={20} className="watch-icon" />
       </div>
 
-      <div className="messages-scroll">
-        {/* WATCH PARTY */}
-        {chatData?.watchSession?.videoId && (
-          <WatchParty
-            chatId={chatId}
-            currentUser={currentUser}
-            watchSession={chatData.watchSession}
-          />
-        )}
+      <PinnedBanner
+        chatId={chatId}
+        pinnedMessage={pinnedMessage}
+        onJumpTo={handleJumpToMessage}
+      />
 
-        {/* MESSAGES */}
-        {messages.map((msg) => (
-          <MessageBubble
-            key={msg.id}
-            message={msg}
-            isOwn={msg.senderId === currentUser.uid}
-            activeWatchVideoId={chatData?.watchSession?.videoId}
-          />
+      {chatData?.watchSession?.videoId && (
+        <WatchParty
+          chatId={chatId}
+          currentUser={currentUser}
+          watchSession={chatData.watchSession}
+          viewers={chatData.watchViewers}
+        />
+      )}
+
+      <div className="messages-scroll">
+        {visibleMessages.map((msg) => (
+          <div key={msg.id} ref={(el) => (messageRefs.current[msg.id] = el)}>
+            <MessageBubble
+              message={msg}
+              isOwn={msg.senderId === currentUser.uid}
+              activeWatchVideoId={chatData?.watchSession?.videoId}
+              chatId={chatId}
+              currentUser={currentUser}
+              isGroup={isGroup}
+              senderRole={roles[msg.senderId]}
+              otherUserName={otherUser?.displayName}
+              onReply={setReplyingTo}
+              onJumpToMessage={handleJumpToMessage}
+            />
+          </div>
         ))}
 
         <div ref={bottomRef} />
       </div>
 
-      <MessageInput onSend={handleSend} />
+      {noLongerInGroup ? (
+        <div className="you-left-bar">
+          <span>You're no longer a member of this group.</span>
+          <button onClick={onBack}>Back to chats</button>
+        </div>
+      ) : (
+        <MessageInput
+          onSend={handleSend}
+          chatId={chatId}
+          currentUser={currentUser}
+          frozen={isFrozenForMe}
+          participants={chatData?.participants || []}
+          replyingTo={replyingTo}
+          onCancelReply={() => setReplyingTo(null)}
+        />
+      )}
+
+      {showInfo && chatData && stillMember && (
+        <InfoPanel
+          chat={chatData}
+          currentUser={currentUser}
+          messages={visibleMessages}
+          onClose={() => setShowInfo(false)}
+          onGroupDeleted={handleGroupDeleted}
+          onGroupLeft={handleGroupDeleted}
+        />
+      )}
     </div>
   );
 }

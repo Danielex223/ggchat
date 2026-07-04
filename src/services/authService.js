@@ -20,6 +20,11 @@ export const registerUser = async (email, password, displayName) => {
     displayName_lower: displayName.toLowerCase(),
     email,
     photoURL: "",
+    bio: "",
+    hideEmail: false,
+    friends: [],
+    incomingRequests: [],
+    outgoingRequests: [],
     online: true,
     lastSeen: serverTimestamp(),
     createdAt: serverTimestamp(),
@@ -45,6 +50,36 @@ export const logoutUser = async () => {
     });
   }
   await signOut(auth);
+};
+
+export const updateDisplayName = async (newName) => {
+  const user = auth.currentUser;
+  if (!user) return;
+
+  await updateProfile(user, { displayName: newName });
+
+  await updateDoc(doc(db, "users", user.uid), {
+    displayName: newName,
+    displayName_lower: newName.toLowerCase(),
+  });
+};
+
+export const updateBio = async (uid, newBio) => {
+  await updateDoc(doc(db, "users", uid), {
+    bio: newBio,
+  });
+};
+
+export const updateProfilePicture = async (uid, base64Image) => {
+  await updateDoc(doc(db, "users", uid), {
+    photoURL: base64Image,
+  });
+};
+
+export const updatePrivacy = async (uid, hideEmail) => {
+  await updateDoc(doc(db, "users", uid), {
+    hideEmail,
+  });
 };
 
 export const subscribeToAuthChanges = (callback) => {
